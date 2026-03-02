@@ -1,13 +1,12 @@
 import streamlit as st
 import subprocess
-import shutil
 import copy
 
 # ── Page config ──────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Sudoku Solver", page_icon="🧩", layout="centered")
 
 st.title("🧩 Sudoku Solver")
-st.caption("Powered by SWI-Prolog CLP(FD) — with a Python backtracking fallback")
+st.caption("Powered by SWI-Prolog CLP(FD)")
 
 # ── Example puzzles ───────────────────────────────────────────────────────────
 EXAMPLES = {
@@ -53,8 +52,6 @@ if "solution" not in st.session_state:
     st.session_state.solution = None
 if "error" not in st.session_state:
     st.session_state.error = None
-if "solver_used" not in st.session_state:
-    st.session_state.solver_used = None
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -73,118 +70,61 @@ def board_from_session():
         board.append(row)
     return board
 
-# ── Pure Python backtracking solver ──────────────────────────────────────────
 
-def is_valid(board, row, col, num):
-    if num in board[row]:
-        return False
-    if num in [board[r][col] for r in range(9)]:
-        return False
-    br, bc = (row // 3) * 3, (col // 3) * 3
-    for r in range(br, br + 3):
-        for c in range(bc, bc + 3):
-            if board[r][c] == num:
-                return False
-    return True
-
-def solve_python(board):
-    board = copy.deepcopy(board)
-    empty = [(r, c) for r in range(9) for c in range(9) if board[r][c] == 0]
-
-    def backtrack(idx):
-        if idx == len(empty):
-            return True
-        r, c = empty[idx]
-        for num in range(1, 10):
-            if is_valid(board, r, c, num):
-                board[r][c] = num
-                if backtrack(idx + 1):
-                    return True
-                board[r][c] = 0
-        return False
-
-    if backtrack(0):
-        return board
-    return None
 
 # ── Prolog solver ─────────────────────────────────────────────────────────────
 
-def board_to_prolog_list(board):
-    cells = []
-    for row in board:
-        for val in row:
-            cells.append(str(val) if val != 0 else "_")
-    return "[" + ",".join(cells) + "]"
-
 def solve_prolog(board):
-    prolog_list = board_to_prolog_list(board)
-    goal = (
-        f"use_module(library(clpfd)), "
-        f"B = {prolog_list}, "
-        f"Rows = [R1,R2,R3,R4,R5,R6,R7,R8,R9], "
-        f"append(Rows, B), "
-        f"maplist(ins(1..9), B), "
-        f"maplist(all_distinct, Rows), "
-        f"transpose(Rows, Cols), maplist(all_distinct, Cols), "
-        f"Rows = [A,B2,C,D,E,F,G,H,I], "
-        f"blocks(A,B2,C), blocks(D,E,F), blocks(G,H,I), "
-        f"maplist(label, Rows), "
-        f"maplist(writeln, Rows), halt."
-    )
-    # Simpler self-contained goal using the atva02.pl approach
+    """
+    Solves a Sudoku board using the atva02.pl Prolog solver.
+
+    Args:
+        board: 9x9 list of lists with integers 0-9 (0 = empty)
+
+    Returns:
+        tuple: (solution, error) where solution is 9x9 list or None,
+               and error is error message or None
+    """
+    # Convert board to Prolog format: [[1,2,_,...],[...],...]
     board_rows = []
     for row in board:
         cells = ",".join(str(v) if v != 0 else "_" for v in row)
         board_rows.append(f"[{cells}]")
-    rows_str = "[" + ",".join(board_rows) + "]"
+    board_str = "[" + ",".join(board_rows) + "]"
 
-    goal = (
-        "use_module(library(clpfd)),"
-        f"Board = {rows_str},"
-        "append(Board, Vs), Vs ins 1..9,"
-        "maplist(all_distinct, Board),"
-        "transpose(Board, Cols), maplist(all_distinct, Cols),"
-        "Board = [R1,R2,R3,R4,R5,R6,R7,R8,R9],"
-        "blocks(R1,R2,R3), blocks(R4,R5,R6), blocks(R7,R8,R9),"
-        "maplist(label, Board),"
-        "maplist(writeln, Board), halt."
-    )
+    # Build the goal to call solve_and_print/1
+    goal = f"solve_and_print({board_str})"
 
-    blocks_def = (
-        ":- meta_predicate blocks(+,+,+). "
-        "blocks([],[],[]). "
-        "blocks([A,B,C|T1],[D,E,F|T2],[G,H,I|T3]) :- "
-        "all_distinct([A,B,C,D,E,F,G,H,I]), blocks(T1,T2,T3)."
-    )
-
-    prolog_program = f":- use_module(library(clpfd)).\n{blocks_def}\n:- {goal}\n"
-
-    import tempfile, os
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.pl', delete=False) as f:
-        f.write(prolog_program)
-        fname = f.name
+    import os
 
     try:
         result = subprocess.run(
-            ["swipl", "-q", "-f", fname],
-            capture_output=True, text=True, timeout=10
+            ["swipl", "-q", "-g", goal, "-t", "halt", "atva02.pl"],
+            capture_output=True, text=True, timeout=10,
+            cwd=os.path.dirname(os.path.abspath(__file__))
         )
-        os.unlink(fname)
+
         if result.returncode != 0:
-            return None, result.stderr
+            error_msg = result.stdout + result.stderr
+            return None, error_msg if error_msg else "Prolog solver failed"
+
         # Parse output: each line is like "[4,8,3,9,2,1,6,5,7]"
         solution = []
         for line in result.stdout.strip().splitlines():
             line = line.strip().strip("[]")
-            nums = [int(x) for x in line.split(",")]
-            if len(nums) == 9:
-                solution.append(nums)
+            if line:
+                nums = [int(x.strip()) for x in line.split(",")]
+                if len(nums) == 9:
+                    solution.append(nums)
+
         if len(solution) == 9:
             return solution, None
         return None, "Could not parse Prolog output"
+
     except subprocess.TimeoutExpired:
-        os.unlink(fname)
         return None, "Prolog solver timed out"
+    except FileNotFoundError:
+        return None, "SWI-Prolog not found. Make sure 'swipl' is installed."
     except Exception as e:
         return None, str(e)
 
@@ -197,103 +137,111 @@ with col1:
         st.session_state.board = [[0]*9 for _ in range(9)]
         st.session_state.solution = None
         st.session_state.error = None
+        # Clear all cell inputs
+        for r in range(9):
+            for c in range(9):
+                st.session_state[f"cell_{r}_{c}"] = ""
         st.rerun()
 with col2:
     if st.button("Easy", use_container_width=True):
         st.session_state.board = copy.deepcopy(EXAMPLES["Easy"])
         st.session_state.solution = None
         st.session_state.error = None
+        # Populate cell inputs with example
+        for r in range(9):
+            for c in range(9):
+                val = EXAMPLES["Easy"][r][c]
+                st.session_state[f"cell_{r}_{c}"] = str(val) if val != 0 else ""
         st.rerun()
 with col3:
     if st.button("Medium", use_container_width=True):
         st.session_state.board = copy.deepcopy(EXAMPLES["Medium"])
         st.session_state.solution = None
         st.session_state.error = None
+        # Populate cell inputs with example
+        for r in range(9):
+            for c in range(9):
+                val = EXAMPLES["Medium"][r][c]
+                st.session_state[f"cell_{r}_{c}"] = str(val) if val != 0 else ""
         st.rerun()
 with col4:
     if st.button("Hard", use_container_width=True):
         st.session_state.board = copy.deepcopy(EXAMPLES["Hard"])
         st.session_state.solution = None
         st.session_state.error = None
+        # Populate cell inputs with example
+        for r in range(9):
+            for c in range(9):
+                val = EXAMPLES["Hard"][r][c]
+                st.session_state[f"cell_{r}_{c}"] = str(val) if val != 0 else ""
         st.rerun()
 with col5:
     solve_clicked = st.button("▶ Solve", use_container_width=True, type="primary")
 
 st.divider()
 
-# 9×9 grid
-display = st.session_state.solution if st.session_state.solution else st.session_state.board
-clue_board = st.session_state.board  # original clues (non-zero = clue)
+# Interactive 9×9 Sudoku Grid
+st.markdown("**Enter your puzzle** — click on any cell to edit (1-9, or leave empty):")
 
-BOX_COLORS = {
-    (0,0): "#EEF2FF", (0,1): "#FFF7ED", (0,2): "#EEF2FF",
-    (1,0): "#FFF7ED", (1,1): "#EEF2FF", (1,2): "#FFF7ED",
-    (2,0): "#EEF2FF", (2,1): "#FFF7ED", (2,2): "#EEF2FF",
-}
-
-# Render grid with custom styling
-grid_html = """
+# Custom CSS for better grid appearance
+st.markdown("""
 <style>
-.sudoku-grid { border-collapse: collapse; margin: 0 auto; }
-.sudoku-grid td {
-    width: 46px; height: 46px;
-    text-align: center; vertical-align: middle;
-    font-size: 20px; font-weight: 600;
-    border: 1px solid #ccc;
-    cursor: default;
+div[data-testid="column"] {
+    padding: 0 !important;
 }
-.sudoku-grid tr:nth-child(3n) td { border-bottom: 2.5px solid #333; }
-.sudoku-grid tr:nth-child(3n+1) td { border-top: 2.5px solid #333; }
-.sudoku-grid td:nth-child(3n) { border-right: 2.5px solid #333; }
-.sudoku-grid td:nth-child(3n+1) { border-left: 2.5px solid #333; }
-.cell-clue { color: #1e3a5f; }
-.cell-solved { color: #16a34a; }
-.cell-empty { color: #9ca3af; }
+.stTextInput > div > div > input {
+    text-align: center;
+    font-size: 20px;
+    font-weight: 600;
+    padding: 12px 0;
+    height: 52px;
+}
 </style>
-<table class="sudoku-grid">
-"""
+""", unsafe_allow_html=True)
+
+# Render the interactive grid with text inputs
 for r in range(9):
-    grid_html += "<tr>"
+    cols = st.columns([1]*9, gap="small")
     for c in range(9):
-        box = (r // 3, c // 3)
-        bg = BOX_COLORS[box]
-        val = display[r][c]
-        is_clue = clue_board[r][c] != 0
-        is_solved_cell = (not is_clue) and val != 0
+        with cols[c]:
+            # Initialize session state for this cell if not exists
+            cell_key = f"cell_{r}_{c}"
+            if cell_key not in st.session_state:
+                current_val = st.session_state.board[r][c]
+                st.session_state[cell_key] = str(current_val) if current_val != 0 else ""
 
-        if val == 0:
-            cell_class = "cell-empty"
-            text = "·"
-        elif is_clue:
-            cell_class = "cell-clue"
-            text = str(val)
-        else:
-            cell_class = "cell-solved"
-            text = str(val)
+            # Show solution if available
+            if st.session_state.solution:
+                solution_val = st.session_state.solution[r][c]
+                is_clue = st.session_state.board[r][c] != 0
+                if is_clue:
+                    st.markdown(f"<div style='text-align:center; font-size:24px; font-weight:700; color:#1e3a5f; padding:14px 0;'>{solution_val}</div>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"<div style='text-align:center; font-size:24px; font-weight:700; color:#16a34a; padding:14px 0;'>{solution_val}</div>", unsafe_allow_html=True)
+            else:
+                st.text_input(
+                    label=f"r{r}c{c}",
+                    key=cell_key,
+                    label_visibility="collapsed",
+                    max_chars=1,
+                    placeholder="·",
+                )
 
-        grid_html += f'<td style="background:{bg}"><span class="{cell_class}">{text}</span></td>'
-    grid_html += "</tr>"
-grid_html += "</table>"
-
-st.markdown(grid_html, unsafe_allow_html=True)
+    # Add visual separator after every 3rd row
+    if r in [2, 5]:
+        st.markdown("<hr style='margin: 8px 0; border: 1px solid #333;'>", unsafe_allow_html=True)
+    elif r < 8:
+        st.markdown("<div style='margin: 4px 0;'></div>", unsafe_allow_html=True)
 
 st.divider()
 
-# Input area
-st.markdown("**Edit puzzle** — enter digits 1–9, use 0 or leave blank for empty cells:")
-
-input_cols = st.columns(9)
-for r in range(9):
-    for c in range(9):
-        current_val = st.session_state.board[r][c]
-        display_val = str(current_val) if current_val != 0 else ""
-        input_cols[c].text_input(
-            label=f"r{r}c{c}",
-            value=display_val,
-            key=f"cell_{r}_{c}",
-            label_visibility="collapsed",
-            max_chars=1,
-        )
+# Action buttons
+col_a, col_b, col_c = st.columns([1, 1, 2])
+with col_a:
+    if st.session_state.solution and st.button("🔄 Try Again", use_container_width=True):
+        st.session_state.solution = None
+        st.session_state.error = None
+        st.rerun()
 
 # Solve logic
 if solve_clicked:
@@ -302,41 +250,17 @@ if solve_clicked:
     st.session_state.solution = None
     st.session_state.error = None
 
-    swipl_available = shutil.which("swipl") is not None
-
-    if swipl_available:
-        solution, err = solve_prolog(current_board)
-        if solution:
-            st.session_state.solution = solution
-            st.session_state.solver_used = "Prolog (CLP/FD)"
-        else:
-            # fallback
-            solution = solve_python(current_board)
-            if solution:
-                st.session_state.solution = solution
-                st.session_state.solver_used = "Python (backtracking fallback)"
-            else:
-                st.session_state.error = f"No solution found. Prolog error: {err}"
+    solution, err = solve_prolog(current_board)
+    if solution:
+        st.session_state.solution = solution
     else:
-        solution = solve_python(current_board)
-        if solution:
-            st.session_state.solution = solution
-            st.session_state.solver_used = "Python (backtracking — swipl not found)"
-        else:
-            st.session_state.error = "No solution found for this puzzle."
+        st.session_state.error = f"Could not solve puzzle. {err if err else 'No solution exists.'}"
 
     st.rerun()
 
 # Status messages
 if st.session_state.solution:
-    st.success(f"✅ Solved! ({st.session_state.solver_used})")
+    st.success("✅ Solved! Click 'Try Again' to edit the puzzle.")
 
 if st.session_state.error:
     st.error(st.session_state.error)
-
-# Solver availability info
-swipl_ok = shutil.which("swipl") is not None
-if swipl_ok:
-    st.info("🔵 SWI-Prolog detected — Prolog CLP(FD) solver will be used.")
-else:
-    st.warning("⚠️ SWI-Prolog not found — using pure Python backtracking solver. Install with: `sudo apt install swi-prolog`")
