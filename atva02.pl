@@ -276,7 +276,28 @@ about :-
     write('Registration: 20250071451'), nl.
 
 % =============================================================================
-% AUTO ENTRY POINT
+% PROGRAMMATIC INTERFACE FOR EXTERNAL CALLS
 % =============================================================================
 
-:- initialization(main, main).
+% solve_and_print(+Board)
+% Accepts a 9x9 board (with variables for empty cells) and prints the solution.
+% Each row is printed on a single line in the format: [1,2,3,4,5,6,7,8,9]
+% Usage: swipl -q -g "solve_and_print(Board)" -t halt atva02.pl
+solve_and_print(Board) :-
+    (   sudoku(Board)
+    ->  maplist(writeln, Board)
+    ;   write('ERROR: No solution found'), nl,
+        halt(1)
+    ).
+
+% =============================================================================
+% AUTO ENTRY POINT (for interactive CLI usage)
+% =============================================================================
+
+% To run the interactive CLI, use:
+%   swipl -q -g main -t halt atva02.pl
+%
+% The automatic initialization is commented out to allow programmatic usage
+% from external programs (like app.py) without interference.
+%
+% :- initialization(main, main).
