@@ -1,6 +1,6 @@
 # Sudoku Solver
 
-A modern 9×9 Sudoku solver combining the power of Prolog's constraint logic. Originally developed for the Logic Applied to Computing course at UFPB (Federal University of Paraíba, Brazil), this project demonstrates practical applications of declarative programming and automated reasoning.
+A modern 9×9 Sudoku solver using Prolog's constraint logic. Originally developed for the Logic Applied to Computing course at UFPB (Federal University of Paraíba, Brazil), this project demonstrates practical applications of declarative programming and automated reasoning.
 
 ## Features
 
