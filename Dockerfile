@@ -1,4 +1,4 @@
-FROM python:3.12 as builder
+FROM python:3.12 AS builder
 WORKDIR /install
 COPY requirements.txt .
 RUN pip install --prefix=/install -r requirements.txt
