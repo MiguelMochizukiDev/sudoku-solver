@@ -110,6 +110,21 @@ display_board(Board) :-
 % EXAMPLE PUZZLES
 % =============================================================================
 
+% Helper to convert variables to 0 for external consumption
+puzzle_to_list([], []).
+puzzle_to_list([Row|Rows], [ConvertedRow|ConvertedRows]) :-
+    maplist(var_to_zero, Row, ConvertedRow),
+    puzzle_to_list(Rows, ConvertedRows).
+
+var_to_zero(X, 0) :- var(X), !.
+var_to_zero(X, X).
+
+% Output puzzle in Python-friendly format (0 for empty cells)
+print_puzzle_as_list(Name) :-
+    puzzle(Name, Board),
+    puzzle_to_list(Board, ListBoard),
+    maplist(writeln, ListBoard).
+
 puzzle(easy,
     [[_,_,3, _,2,_, 6,_,_],
      [9,_,_, 3,_,5, _,_,1],
