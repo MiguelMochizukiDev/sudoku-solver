@@ -1,0 +1,14 @@
+.git
+.gitignore
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.log
+*.ipynb
+.env
+venv
+.env
+tests
+datasets
+models
