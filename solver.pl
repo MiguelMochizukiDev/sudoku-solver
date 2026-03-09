@@ -5,8 +5,10 @@
  * Federal University of Paraíba (UFPB)
  * Computer Science Bachelor's Degree
  *
- * Student: Miguel Mochizuki Silva
- * Registration: 20250071451
+ * Students:
+ * Miguel Mochizuki Silva
+ * Gabriel Bringel Gonçalves
+ * André Teles
  *
  * Concepts demonstrated:
  * - Facts and rules
