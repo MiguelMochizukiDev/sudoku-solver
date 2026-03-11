@@ -289,8 +289,9 @@ about :-
     nl,
     write('Course     : Logic Applied to Computing'), nl,
     write('Program    : Computer Science / UFPB'), nl,
-    write('Student    : Miguel Mochizuki Silva'), nl,
-    write('Registration: 20250071451'), nl.
+    write('Students   : Miguel Mochizuki Silva'), nl,
+    write('             Gabriel Bringel Gonçalves'), nl,
+    write('             André Teles'), nl.
 
 % =============================================================================
 % PROGRAMMATIC INTERFACE FOR EXTERNAL CALLS
